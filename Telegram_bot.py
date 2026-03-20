@@ -63,7 +63,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # 🚀 RUN BOT
 app = ApplicationBuilder().token(TOKEN).build()
+
 app.add_handler(MessageHandler(filters.TEXT, handle_message))
 
-print("🤖 Bot running...")
+print("🤖 Bot is running...")
 app.run_polling()
