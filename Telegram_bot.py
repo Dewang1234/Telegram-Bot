@@ -3,7 +3,7 @@ from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTyp
 import os
 
 # 🔐 Use environment variable (IMPORTANT for Render)
-TOKEN = os.getenv("8704404848:AAE2ur5uiJ9zsnCeI99_2-RrrcHz4wDXjLQ")
+TOKEN ="8704404848:AAE2ur5uiJ9zsnCeI99_2-RrrcHz4wDXjLQ"
 
 # 📚 SUBJECT-BASED DATA
 links = {
