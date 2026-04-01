@@ -6,7 +6,7 @@ import json
 # 🔐 Use environment variable (IMPORTANT for Render)
 TOKEN = os.getenv("TOKEN")
 
-with open("data.json", "r") as file:
+with open("papers.json", "r") as file:
     links = json.load(file)
     
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
