@@ -7,7 +7,7 @@ import json
 TOKEN = os.getenv("TOKEN")
 
 # load json
-with open("data.json", "r") as file:
+with open("papers.json", "r") as file:
     data = json.load(file)
 
 
