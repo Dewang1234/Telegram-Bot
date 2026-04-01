@@ -6,32 +6,34 @@ import json
 # 🔐 Use environment variable (IMPORTANT for Render)
 TOKEN = os.getenv("TOKEN")
 
-with open("papers.json", "r") as file:
-    links = json.load(file)
-    
+# load json
+with open("data.json", "r") as file:
+    data = json.load(file)
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.lower()
 
-    # synonyms
-    if "data structure" in text:
-        text += " dsa"
+    results = []
 
-    found_subject = None
+    # 🔍 SEARCH in JSON
+    for item in data:
+        if text in item["subject_name"].lower() or text in item["branch"].lower():
+            results.append(item)
 
-    for subject in links:
-        if subject in text:
-            found_subject = subject
-            break
+    # ✅ IF FOUND
+    if results:
+        reply = "📚 Matching Papers:\n\n"
 
-    if found_subject:
-        reply = f"📚 {found_subject.upper()} Papers:\n\n"
-
-        for title, link in links[found_subject].items():
-            reply += f"👉 {title}:\n{link}\n\n"
+        for item in results[:5]:  # limit results
+            reply += f"👉 {item['subject_name']}\n"
+            reply += f"🔗 {item['url']}\n\n"
 
         await update.message.reply_text(reply)
+
+    # ❌ NOT FOUND
     else:
-        await update.message.reply_text("❌ No data found")
+        await update.message.reply_text("❌ No matching papers found.")
 
 # 🚀 START BOT
 app = ApplicationBuilder().token(TOKEN).build()
