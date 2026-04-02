@@ -3,10 +3,8 @@ from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTyp
 import os
 import json
 
-# 🔐 Use environment variable (IMPORTANT for Render)
 TOKEN = os.getenv("TOKEN")
 
-# load json
 with open("papers.json", "r") as file:
     data = json.load(file)
 
@@ -16,12 +14,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     results = []
 
-    # 🔍 SEARCH in JSON
+    # SEARCH in JSON
     for item in data:
         if text in item["subject_name"].lower() or text in item["branch"].lower():
             results.append(item)
 
-    # ✅ IF FOUND
+    # IF FOUND
     if results:
         reply = "📚 Matching Papers:\n\n"
 
@@ -31,11 +29,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await update.message.reply_text(reply)
 
-    # ❌ NOT FOUND
+    # NOT FOUND
     else:
         await update.message.reply_text("❌ No matching papers found.")
 
-# 🚀 START BOT
+# START BOT
 app = ApplicationBuilder().token(TOKEN).build()
 
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
