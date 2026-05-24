@@ -2,12 +2,24 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, filters, ContextTypes
 import os
 import json
+import sys
 
 TOKEN = os.getenv("TOKEN")
 
-with open("papers.json", "r") as file:
-    data = json.load(file)
+# Get the directory where this script is located
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PAPERS_PATH = os.path.join(SCRIPT_DIR, "papers.json")
 
+# Load papers.json with full path
+try:
+    with open(PAPERS_PATH, "r") as file:
+        data = json.load(file)
+    print(f"✅ Loaded papers.json from {PAPERS_PATH}")
+except FileNotFoundError:
+    print(f"❌ ERROR: papers.json not found at {PAPERS_PATH}")
+    print(f"Current directory: {os.getcwd()}")
+    print(f"Files in current directory: {os.listdir('.')}")
+    sys.exit(1)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.lower()
