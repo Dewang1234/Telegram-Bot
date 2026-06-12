@@ -1,8 +1,9 @@
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 import os
 import json
 import sys
+import math
 
 TOKEN = os.getenv("TOKEN")
 
@@ -26,8 +27,16 @@ except json.JSONDecodeError:
     print(f"❌ ERROR: papers.json has invalid JSON format!")
     sys.exit(1)
 
+# Store user search results temporarily
+user_sessions = {}
+
+# Constants for pagination
+ITEMS_PER_PAGE = 10
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send welcome message with bot features"""
+    total_subjects = len(set(item.get("subject_name", "") for item in data))
+    
     welcome_message = f"""
 🎓 *Welcome to ABVV University Papers Bot!*
 
@@ -50,9 +59,11 @@ Simply type the *subject name* or *branch name* and I'll find matching papers.
 *💡 Tips:*
 • Use full subject names for better results
 • Try different keywords if no results found
-• Type /subjects to see all available subjects
+• Use /subjects to browse all {total_subjects} subjects
+• Use /branches to see available branches
 
-*📚 Total Papers Available:* {len(data)}
+*📚 Total Papers:* {len(data)}
+*📖 Total Subjects:* {total_subjects}
 
 Start searching by typing a subject or branch name!
     """
@@ -71,19 +82,15 @@ Just type the subject name or branch name directly.
 • `CSE` - Shows all Computer Science papers  
 • `Mathematics` - Shows Mathematics papers
 
-*What Each Result Shows:*
-👉 *Subject Name* (Branch)
-🔗 *Download Link*
-
-*No Results?*
-• Try using the full subject name
-• Check your spelling
-• Type /subjects to see what's available
+*Navigation:*
+• Use *Next* and *Previous* buttons to browse through results
+• Type /subjects to browse all available subjects
+• Type /branches to see all available branches
 
 *Commands:*
 /start - Show welcome message
 /help - Show this help
-/subjects - List all available subjects
+/subjects - Browse all subjects (with pagination)
 /branches - List all available branches
 
 *All papers are from ABVV University.*
@@ -91,57 +98,96 @@ Just type the subject name or branch name directly.
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
 async def subjects_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """List all available subjects"""
-    subjects = set()
-    for item in data:
-        subject = item.get("subject_name", "Unknown")
-        subjects.add(subject)
+    """List all available subjects with pagination"""
+    # Get unique subjects
+    subjects = sorted(list(set(item.get("subject_name", "Unknown") for item in data)))
+    total_subjects = len(subjects)
     
-    subjects_list = sorted(list(subjects))
+    if not subjects:
+        await update.message.reply_text("No subjects found in database.")
+        return
     
-    if subjects_list:
-        response = "*📚 Available Subjects in ABVV:*\n\n"
-        for subject in subjects_list[:30]:  # Show first 30
-            response += f"• {subject}\n"
-        
-        if len(subjects_list) > 30:
-            response += f"\n*+ {len(subjects_list) - 30} more subjects*"
-        response += f"\n\n*Total:* {len(subjects_list)} subjects"
+    # Store in user session
+    user_id = update.effective_user.id
+    user_sessions[user_id] = {
+        'type': 'subjects',
+        'data': subjects,
+        'total': total_subjects
+    }
+    
+    # Show first page
+    await show_subjects_page(update, user_id, 0)
+
+async def show_subjects_page(update: Update, user_id: int, page: int):
+    """Display a specific page of subjects"""
+    session = user_sessions.get(user_id)
+    if not session or session['type'] != 'subjects':
+        return
+    
+    subjects = session['data']
+    total = session['total']
+    
+    start_idx = page * ITEMS_PER_PAGE
+    end_idx = min(start_idx + ITEMS_PER_PAGE, total)
+    current_subjects = subjects[start_idx:end_idx]
+    
+    total_pages = math.ceil(total / ITEMS_PER_PAGE)
+    
+    # Create message
+    message = f"*📚 Subjects in ABVV University (Page {page + 1}/{total_pages})*\n\n"
+    for idx, subject in enumerate(current_subjects, start_idx + 1):
+        message += f"{idx}. {subject}\n"
+    
+    message += f"\n*Total Subjects:* {total}"
+    
+    # Create inline keyboard for pagination
+    keyboard = []
+    nav_buttons = []
+    
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton("◀️ Previous", callback_data=f"subjects_page_{page - 1}"))
+    if end_idx < total:
+        nav_buttons.append(InlineKeyboardButton("Next ▶️", callback_data=f"subjects_page_{page + 1}"))
+    
+    if nav_buttons:
+        keyboard.append(nav_buttons)
+    
+    # Add search tip
+    keyboard.append([InlineKeyboardButton("🔍 Search a Subject", switch_inline_query_current_chat="")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
+    
+    if page == 0:
+        await update.message.reply_text(message, parse_mode='Markdown', reply_markup=reply_markup)
     else:
-        response = "No subjects found in database."
-    
-    await update.message.reply_text(response, parse_mode='Markdown')
+        await update.callback_query.edit_message_text(message, parse_mode='Markdown', reply_markup=reply_markup)
 
 async def branches_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """List all available branches"""
-    branches = set()
-    for item in data:
-        branch = item.get("branch", "Unknown")
-        branches.add(branch)
+    branches = sorted(list(set(item.get("branch", "Unknown") for item in data)))
     
-    branches_list = sorted(list(branches))
-    
-    if branches_list:
+    if branches:
         response = "*🏫 Available Branches in ABVV:*\n\n"
-        for branch in branches_list:
-            response += f"• {branch}\n"
-        response += f"\n*Total:* {len(branches_list)} branches"
+        for branch in branches:
+            # Count papers in this branch
+            count = sum(1 for item in data if item.get("branch") == branch)
+            response += f"• {branch} *({count} papers)*\n"
+        response += f"\n*Total:* {len(branches)} branches"
     else:
         response = "No branches found in database."
     
     await update.message.reply_text(response, parse_mode='Markdown')
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Search and display papers based on user input"""
+    """Search and display papers based on user input with pagination"""
     text = update.message.text.lower()
     
     if not data:
         await update.message.reply_text("⚠️ Paper database is empty. Please contact administrator.")
         return
     
+    # Search for matching papers
     results = []
-    
-    # SEARCH in JSON
     for item in data:
         subject_name = item.get("subject_name", "").lower()
         branch = item.get("branch", "").lower()
@@ -149,27 +195,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if text in subject_name or text in branch:
             results.append(item)
     
-    # IF FOUND
-    if results:
-        reply = f"🔍 *Found {len(results)} paper(s) in ABVV:*\n\n"
-        
-        for idx, item in enumerate(results[:10], 1):  # Limit to 10 results
-            subject = item.get('subject_name', 'N/A')
-            branch = item.get('branch', 'N/A')
-            url = item.get('url', '#')
-            
-            reply += f"*{idx}. {subject}*\n"
-            reply += f"   📚 *Branch:* {branch}\n"
-            reply += f"   🔗 [Download Link]({url})\n\n"
-        
-        if len(results) > 10:
-            reply += f"\n*Showing first 10 of {len(results)} results.*\n"
-            reply += "Try a more specific search term for better results."
-        
-        await update.message.reply_text(reply, parse_mode='Markdown', disable_web_page_preview=True)
-    
-    # NOT FOUND
-    else:
+    if not results:
         not_found_message = """
 ❌ *No matching papers found in ABVV database.*
 
@@ -182,6 +208,101 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 *Example searches:* Data Science, CSE, Mathematics, Physics
         """
         await update.message.reply_text(not_found_message, parse_mode='Markdown')
+        return
+    
+    # Store search results in user session
+    user_id = update.effective_user.id
+    user_sessions[user_id] = {
+        'type': 'search',
+        'data': results,
+        'total': len(results),
+        'search_term': text
+    }
+    
+    # Show first page of results
+    await show_search_results(update, user_id, 0)
+
+async def show_search_results(update: Update, user_id: int, page: int):
+    """Display a specific page of search results"""
+    session = user_sessions.get(user_id)
+    if not session or session['type'] != 'search':
+        return
+    
+    results = session['data']
+    total = session['total']
+    search_term = session.get('search_term', '')
+    
+    start_idx = page * ITEMS_PER_PAGE
+    end_idx = min(start_idx + ITEMS_PER_PAGE, total)
+    current_results = results[start_idx:end_idx]
+    
+    total_pages = math.ceil(total / ITEMS_PER_PAGE)
+    
+    # Create message
+    message = f"🔍 *Search Results for '{search_term}'* (Page {page + 1}/{total_pages})\n"
+    message += f"📚 *Found {total} paper(s) in ABVV:*\n\n"
+    
+    for idx, item in enumerate(current_results, start_idx + 1):
+        subject = item.get('subject_name', 'N/A')
+        branch = item.get('branch', 'N/A')
+        url = item.get('url', '#')
+        
+        message += f"*{idx}. {subject}*\n"
+        message += f"   📚 *Branch:* {branch}\n"
+        message += f"   🔗 [Download Link]({url})\n\n"
+    
+    # Create inline keyboard for pagination
+    keyboard = []
+    nav_buttons = []
+    
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton("◀️ Previous", callback_data=f"search_page_{page - 1}"))
+    if end_idx < total:
+        nav_buttons.append(InlineKeyboardButton("Next ▶️", callback_data=f"search_page_{page + 1}"))
+    
+    if nav_buttons:
+        keyboard.append(nav_buttons)
+    
+    # Add navigation info
+    if total > ITEMS_PER_PAGE:
+        info_text = f"Showing {start_idx + 1}-{end_idx} of {total} results"
+        keyboard.append([InlineKeyboardButton(info_text, callback_data="noop")])
+    
+    # Add new search button
+    keyboard.append([InlineKeyboardButton("🔍 New Search", switch_inline_query_current_chat="")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    if page == 0:
+        await update.message.reply_text(message, parse_mode='Markdown', 
+                                       disable_web_page_preview=True, 
+                                       reply_markup=reply_markup)
+    else:
+        await update.callback_query.edit_message_text(message, parse_mode='Markdown', 
+                                                      disable_web_page_preview=True, 
+                                                      reply_markup=reply_markup)
+
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle button clicks for pagination"""
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data
+    user_id = update.effective_user.id
+    
+    if data.startswith("subjects_page_"):
+        # Handle subjects pagination
+        page = int(data.split("_")[2])
+        await show_subjects_page(update, user_id, page)
+    
+    elif data.startswith("search_page_"):
+        # Handle search results pagination
+        page = int(data.split("_")[2])
+        await show_search_results(update, user_id, page)
+    
+    elif data == "noop":
+        # Just acknowledge the button press
+        pass
 
 # START BOT
 app = ApplicationBuilder().token(TOKEN).build()
@@ -195,7 +316,11 @@ app.add_handler(CommandHandler("branches", branches_command))
 # Add message handler for text searches
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-print("🤖 ABVV University Papers Bot is running...")
+# Add callback handler for buttons
+app.add_handler(CallbackQueryHandler(button_callback))
+
+print("🤖 ABVV University Papers Bot is running with pagination...")
 print(f"📚 Loaded {len(data)} papers from ABVV University")
+print("✅ Features: Paginated search results, browseable subjects list")
 print("✅ Commands: /start, /help, /subjects, /branches")
 app.run_polling()
